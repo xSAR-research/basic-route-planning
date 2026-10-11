@@ -1,6 +1,8 @@
 [package]
 name = "basic-route-planning"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
+rust-version = "1.101.0"
 
 [dependencies]
+xsar = { path = "../xsar", default-features = false, features = ["pyramid_json"] }
