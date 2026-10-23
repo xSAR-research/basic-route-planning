@@ -1,5 +1,7 @@
 # basic-route-planning
 
+Version **0.8.5** passed **80 host tests** against xSAR **0.8.105**. The timing refactor names the existing 120-second default in [`src/parameters.rs`](src/parameters.rs), preserving CLI overrides and solver behaviour. See the [timing catalogue](https://github.com/xSAR-research/qmp-qemu-socket/blob/main/docs/Timing-Constants.md). The 0.8.4 manual acceptance below remains historical evidence.
+
 Read a complete saved Pyramid deal and its optional recorded Solver CSV, display
 both, and calculate a minimum-cost offline route with `--solve`. The console keeps
 immutable card identities separate from mutable position and search state. It
@@ -10,8 +12,8 @@ correction to the previously verified 0.8.3 solver revision: 80 tests passed wit
 none failed or ignored. On 19 October, Charlie followed its 49-action route on
 the fresh native-v7 deal successfully, clearing the tableau and both piles.
 **M01–M09 are Complete and accepted**; see the
-[manual acceptance record](docs/Acceptance-0.8.4.md). M10's guarded automated
-execution remains the next implementation approval point.
+[manual acceptance record](docs/Acceptance-0.8.4.md). The application records M10 guarded execution as accepted;
+M11 gameplay verification remains separate.
 The single master schedule is maintained separately at
 the **local sibling-checkout reference**
 `../qmp-qemu-socket/docs/Pyramid-Implementation-Schedule.md`.

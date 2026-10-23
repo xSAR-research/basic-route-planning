@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.5 — timing constants, 23 October 2026
+
+- Name the existing 120-second offline search default in `src/parameters.rs`. Preserve CLI overrides, limits, solver behaviour and saved evidence; verify against sibling xSAR 0.8.105.
+- Preserve every timing value, fresh-effect proof and STOP/context rule. No tuning, new dependencies or unsafe code.
+- Required host checks passed 80 tests, with zero failures, ignored tests or filtered tests. No major/minor version change, installation or publication; native Windows/Beast acceptance remains separate.
+
 Versions follow Charlie's `major.minor.build` policy. Build counters never reset;
 proposed versions remain provisional until the required verification passes.
 

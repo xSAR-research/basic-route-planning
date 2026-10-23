@@ -14,6 +14,12 @@ pub use xsar::games::pyramid::{STOCK_LEN, TABLEAU_LEN};
 use crate::utility::{row_column_from_location, tableau_index};
 
 
+/// Default offline search budget; an explicit CLI time limit overrides this value.
+///
+/// Preserve the established two-minute allowance, independently of app policy.
+pub const DEFAULT_SEARCH_DURATION: std::time::Duration = std::time::Duration::from_secs(120);
+
+
 /// Number of rows in a standard 28-card Pyramid tableau.
 pub const TABLEAU_ROWS: usize = 7;
 
@@ -487,7 +493,7 @@ impl Default for SearchLimits {
             max_states: 2_000_000,
             max_expansions: 2_000_000,
             max_memory_bytes: 512 * 1024 * 1024,
-            max_duration: std::time::Duration::from_secs(120),
+            max_duration: DEFAULT_SEARCH_DURATION,
         }
     }
 }
