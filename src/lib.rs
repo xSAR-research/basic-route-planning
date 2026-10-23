@@ -9,3 +9,15 @@ pub mod input;
 pub mod parameters;
 pub mod position;
 pub mod utility;
+
+
+/// Pure complete-deal transitions under the pinned upstream rules.
+pub mod rules;
+
+
+/// Independent explicit-pile route validation.
+pub mod replay;
+
+
+/// Bounded minimum-cost A* and reference Dijkstra search.
+pub mod search;

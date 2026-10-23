@@ -285,6 +285,15 @@ pub enum CliAction {
     Help,
     /// Display the package version without opening files.
     Version,
+    /// Calculate a minimum-cost route under the pinned offline rules profile.
+    Solve {
+        /// Complete immutable deal document.
+        deal_path: PathBuf,
+        /// Optional recorded comparison, independently replayed before search.
+        solution_path: Option<PathBuf>,
+        /// Explicit finite search limits.
+        limits: SearchLimits,
+    },
     /// Read the original deal and optional manual solution before presentation.
     Inspect {
         /// Explicit path to an xSAR Pyramid JSON document.
@@ -349,6 +358,18 @@ pub enum InputError {
 }
 
 
+/// Output or independent route-validation failure from the offline console.
+#[derive(Debug, Error)]
+pub enum ConsoleError {
+    /// Report writing failed, including stdout devices and downstream pipes.
+    #[error("failed to write to stdout: {0}")]
+    Output(#[from] io::Error),
+    /// A provided or calculated route failed the independent replay model.
+    #[error("independent replay failed: {0}")]
+    Replay(#[from] ReplayError),
+}
+
+
 /// CSV parsing and structural recording errors, separate from gameplay rules.
 #[derive(Debug, Error)]
 pub enum SolutionError {
@@ -378,6 +399,210 @@ pub enum SolutionError {
     /// The recording exceeded the documented operation cap.
     #[error("solution CSV exceeds {MAX_SOLUTION_RECORDS} recorded actions")]
     TooMany,
+}
+
+
+/// Number of original card identities retained by the complete deal.
+pub const DECK_LEN: usize = TABLEAU_LEN + STOCK_LEN;
+
+
+/// Presence mask for all 52 original card identities.
+pub const FULL_DECK_MASK: u64 = (1_u64 << DECK_LEN) - 1;
+
+
+/// Presence mask for the 28 original tableau identities.
+pub const TABLEAU_MASK: u64 = (1_u64 << TABLEAU_LEN) - 1;
+
+
+/// Recycles permitted by the pinned upstream rules: three stock passes total.
+pub const MAX_RECYCLES: u8 = 2;
+
+
+/// Numeric total required to remove a pair, or the value of a removable King.
+pub const PYRAMID_MATCH_TOTAL: u8 = 13;
+
+
+/// Stack capacity exceeding nine visible cards' 36 pairs, nine Kings and one D.
+pub const MAX_SUCCESSORS: usize = 64;
+
+
+/// Canonical complete-knowledge search position; card identities remain in xSAR.
+///
+/// Bits 0..28 describe tableau presence and 28..52 original stock presence.
+/// The stock cursor separates waste ordinals below it from undrawn ordinals.
+/// Fields are internal so public callers cannot construct invalid cursors/masks.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct SearchState {
+    /// Presence of each original card; bits above 51 are always zero.
+    pub(crate) remaining: u64,
+    /// First remaining undrawn stock ordinal, or 24 for exhausted stock.
+    pub(crate) stock_cursor: u8,
+    /// Completed waste-to-stock recycles, in 0..=2.
+    pub(crate) recycles: u8,
+}
+
+
+/// A refused pure transition; its supplied state remains unchanged.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum RuleError {
+    /// A location cannot identify a card in this state.
+    #[error("invalid card location")]
+    InvalidLocation,
+    /// A card is absent, covered, or selected twice.
+    #[error("card unavailable, covered, or selected twice")]
+    Unavailable,
+    /// A King is not rank 13 or a pair does not total 13.
+    #[error("King must be 13 and a pair must total 13")]
+    WrongRank,
+    /// Recycle was requested while undrawn stock remains.
+    #[error("cannot recycle while stock remains")]
+    StockNotEmpty,
+    /// There is no waste to recycle or no stock to draw.
+    #[error("requested DRAW pile is empty")]
+    EmptyWaste,
+    /// Two recycles have already been consumed.
+    #[error("the two-recycle limit has been reached")]
+    RecycleLimit,
+}
+
+
+/// Explicit resource limits for one synchronous search.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SearchLimits {
+    /// Maximum retained state records, including reopened paths.
+    pub max_states: usize,
+    /// Maximum expanded non-stale frontier entries.
+    pub max_expansions: usize,
+    /// Conservative collection-storage allowance in bytes, excluding process RSS.
+    pub max_memory_bytes: usize,
+    /// Cooperative wall-clock deadline measured from the start of search.
+    pub max_duration: std::time::Duration,
+}
+
+
+impl Default for SearchLimits {
+    /// Use bounded workstation defaults; callers may supply smaller/larger limits.
+    fn default() -> Self {
+        Self {
+            max_states: 2_000_000,
+            max_expansions: 2_000_000,
+            max_memory_bytes: 512 * 1024 * 1024,
+            max_duration: std::time::Duration::from_secs(120),
+        }
+    }
+}
+
+
+/// Search ordering; Dijkstra independently disables heuristic guidance/pruning.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SearchMethod {
+    /// Upstream A* with an admissible rank-count lower bound.
+    AStar,
+    /// Zero-heuristic reference minimum-cost search for manageable fixtures.
+    Dijkstra,
+}
+
+
+/// Work actually completed by one bounded search.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SearchStats {
+    /// States whose outgoing actions were examined.
+    pub expanded: usize,
+    /// Legal successor transitions generated, including previously seen states.
+    pub generated: usize,
+    /// Retained predecessor records, including any reopened paths.
+    pub states: usize,
+    /// Largest number of frontier entries retained at once.
+    pub peak_frontier: usize,
+    /// Elapsed synchronous search time, excluding input and report rendering.
+    pub elapsed: std::time::Duration,
+}
+
+
+/// Reason search stopped without proving either a solution or impossibility.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum SearchStop {
+    /// Retained state/predecessor record limit reached.
+    #[error("state limit")]
+    StateLimit,
+    /// Expanded-state limit reached.
+    #[error("expansion limit")]
+    ExpansionLimit,
+    /// Conservative collection-memory allowance reached.
+    #[error("memory limit")]
+    MemoryLimit,
+    /// Cooperative wall-clock deadline reached.
+    #[error("time limit")]
+    TimeLimit,
+    /// The caller's atomic cancellation flag was set.
+    #[error("cancelled")]
+    Cancelled,
+    /// A checked collection allocation failed.
+    #[error("allocation failure")]
+    AllocationFailure,
+    /// A checked internal state/predecessor invariant failed.
+    #[error("internal search invariant failure")]
+    InternalInvariant,
+}
+
+
+/// Outcome preserving the distinction between proof and bounded interruption.
+#[derive(Debug, Eq, PartialEq)]
+pub enum SearchOutcome {
+    /// A minimum-unit-cost path under the explicitly stated upstream profile.
+    Solved {
+        /// Typed actions from the original deal through tableau clearance.
+        actions: Box<[RecordedAction]>,
+        /// Actual work/time counters.
+        stats: SearchStats,
+    },
+    /// Exhaustive search or sound impossible-state proof found no route.
+    Unsolvable {
+        /// Actual work/time counters.
+        stats: SearchStats,
+    },
+    /// No claim of unsolvability or optimality follows from this interruption.
+    Stopped {
+        /// Specific bound/cancellation/allocation reason.
+        reason: SearchStop,
+        /// Actual work/time counters.
+        stats: SearchStats,
+    },
+}
+
+
+/// One independently replayed action with original identity indices for printing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ReplayStep {
+    /// Action retaining the exact ordered tableau/pile locations.
+    pub action: RecordedAction,
+    /// First selected card, or the drawn stock card, as original identity 0..52.
+    pub first: Option<u8>,
+    /// Second selected card for a pair, otherwise absent.
+    pub second: Option<u8>,
+    /// Visible left top before the action.
+    pub dl_before: Option<u8>,
+    /// Visible right top before the action.
+    pub dr_before: Option<u8>,
+    /// Visible left top after the action.
+    pub dl_after: Option<u8>,
+    /// Visible right top after the action.
+    pub dr_after: Option<u8>,
+    /// Number of occupied tableau slots after the action.
+    pub remaining_tableau: u8,
+    /// Recycles used after the action.
+    pub recycles: u8,
+}
+
+
+/// Independent replay refusal with the first failing one-based action number.
+#[derive(Debug, Error)]
+#[error("route step {step}: {reason}")]
+pub struct ReplayError {
+    /// One-based action number, or zero for an invalid initial/final contract.
+    pub step: usize,
+    /// Specific failure from the independent model.
+    pub reason: String,
 }
 
 

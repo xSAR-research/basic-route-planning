@@ -1,141 +1,180 @@
 # basic-route-planning
 
-Read and display a complete acquired Pyramid deal and its optional recorded
-Solver solution. The console keeps the validated original deal and typed solution
-in memory for subsequent offline work. It reads saved files; it does not capture
-or control the guest.
+Read a complete saved Pyramid deal and its optional recorded Solver CSV, display
+both, and calculate a minimum-cost offline route with `--solve`. The console keeps
+immutable card identities separate from mutable position and search state. It
+reads files and sends no guest input.
 
-Version **0.3.2** has passed the required host verification. Charlie accepted the
-M03/M04 documentation and console presentation milestones on 18 October 2026.
-The master implementation schedule records milestone status and Charlie's
-separate acceptance. It is a local sibling-checkout reference at
-`../qmp-qemu-socket/docs/Pyramid-Implementation-Schedule.md`; that file is
-maintained separately from this repository.
+The **0.8.4 solver passed all required host verification** after a checked-access
+correction to the previously verified 0.8.3 solver revision: 80 tests passed with
+none failed or ignored. On 19 October, Charlie followed its 49-action route on
+the fresh native-v7 deal successfully, clearing the tableau and both piles.
+**M01–M09 are Complete and accepted**; see the
+[manual acceptance record](docs/Acceptance-0.8.4.md). M10's guarded automated
+execution remains the next implementation approval point.
+The single master schedule is maintained separately at
+the **local sibling-checkout reference**
+`../qmp-qemu-socket/docs/Pyramid-Implementation-Schedule.md`.
 
 ## Usage
 
 ```text
-basic-route-planning <DEAL_JSON_PATH> [--solution <SOLUTION_CSV_PATH>]
+basic-route-planning <DEAL_JSON_PATH> [--solution <SOLUTION_CSV_PATH>] [--solve]
 basic-route-planning --help
 basic-route-planning --version
 ```
 
-From this checkout, the retained matched evidence can be displayed with:
+1. Display the saved original board, ordered DRAW inventory and recorded solution:
 
-```text
-cargo run --locked -- Evidence/pyramid-recon-20261018-v6-01.json --solution Evidence/pyramid-recon-20261018-v6-01-solver.csv
-```
+   ```text
+   cargo run --locked -- Evidence/pyramid-recon-20261018-v6-01.json --solution Evidence/pyramid-recon-20261018-v6-01-solver.csv
+   ```
 
-The optional solution argument preserves JSON-only invocation. Input files are
-read-only. Both requested files are loaded and validated before combined output;
-SEQUENCE sorting occurs in memory and never rewrites the CSV.
+2. Independently validate the recording, calculate a route and print the derived
+   actions with card identities, targets, resulting pile tops and remaining tableau:
 
-The output includes deal identity and declared provenance/restoration metadata,
-the original seven-row tableau with ranks, suits and numeric values, all 24 DRAW
-cards in original encounter order, initial occupancy counts, the initially
-accessible bottom-row locations, and an aligned recorded-action table. A warning
-identifies solution rows whose file order differed from their SEQUENCE order.
+   ```text
+   cargo run --release --locked -- Evidence/pyramid-recon-20261018-v6-01.json --solution Evidence/pyramid-recon-20261018-v6-01-solver.csv --solve
+   ```
 
-## Positions and card values
+JSON-only invocation remains supported, including `--solve` without a recording.
+Requested input files are loaded and validated before display. CSV sorting happens
+in memory and preserves source bytes and each MATCH's CARD1/CARD2 selection order.
+Plain inspection checks input structure; solving additionally requires any supplied
+recording to pass independent legal replay and end with a cleared tableau.
 
-Tableau locations use **one-based** `row|column`. Rows increase top to bottom,
-columns left to right; row `r` contains columns `1..r`. The apex is `1|1`, and the
-bottom row is `7|1` through `7|7`. These locations remain fixed after removals.
-Bounds require `1 <= column <= row <= 7`.
+## Positions and recording
 
-The ordered DRAW listing numbers encounters **1..24**. Encounter **1 is the
-initial DL card before any D key press**. Internal xSAR arrays remain zero-based.
-`DL` means DRAW PILE LEFT and `DR` means DRAW PILE RIGHT. In a solution they refer
-to the visible tops at that time, rather than a fixed stock encounter number.
+Tableau coordinates use one-based fixed `row|column`: rows increase top to bottom,
+columns left to right, and row `r` has columns `1..r`. Apex `1|1`; bottom row
+`7|1` through `7|7`. Bounds are `1 <= column <= row <= 7`. Removal never renumbers
+remaining cards. DRAW encounters are printed 1..24; encounter 1 is the initial
+DL card before the first D press. Internal original card indices remain zero-based.
 
-Ranks have values Ace=1, 2..10, Jack=11, Queen=12, King=13. Suits are retained in
-the original deal even though Pyramid matching uses rank values.
+`DL` is DRAW PILE LEFT and `DR` is DRAW PILE RIGHT. In an action they identify
+current visible pile tops, not fixed original stock slots. Values are Ace=1,
+2..10, Jack=11, Queen=12 and King=13. The original deal retains suits even though
+Pyramid matching uses ranks.
 
-## Recorded solution CSV
-
-The exact four-column header is:
+The exact recording header is:
 
 ```csv
 SEQUENCE,ACTION,CARD1,CARD2
 ```
 
-Normal CSV quoting is supported, including spreadsheet-exported quoted fields.
-SEQUENCE contains each integer from 1 through the number of steps exactly once.
-The reader rejects duplicates/gaps and displays steps in sequence order while
-preserving CARD1/CARD2 order within each MATCH.
-
-| ACTION | CARD1 | CARD2 | Recorded meaning |
+| ACTION | CARD1 | CARD2 | Meaning and logical cost |
 | --- | --- | --- | --- |
-| MATCH | `DL`, `DR` or `row\|column` | A distinct location in the same format | Match two cards whose values total 13. |
-| KING | One location | Empty | Remove one King. |
-| MOVE | Empty | Empty | Press D. |
-| RECYCLE | Empty | Empty | Press D to recycle; recorded separately for clarity. |
+| MATCH | `DL`, `DR` or `row\|column` | A distinct location | Remove two accessible cards totalling 13; cost 1. |
+| KING | One location | Empty | Remove an accessible King; cost 1. |
+| MOVE | Empty | Empty | Move DL to DR with D; cost 1. |
+| RECYCLE | Empty | Empty | Turn the exhausted DRAW pile over with D; cost 1. |
 
-For example:
+Normal CSV quoting is supported. SEQUENCE must contain each integer 1..N once;
+the reader rejects gaps/duplicates, restores sequence order in memory and reports
+reordering. CSV input is limited to **65,536 bytes and 4,096 records**; the accepted
+recording's 48 steps are not a universal solution-length restriction.
 
-```csv
-SEQUENCE,ACTION,CARD1,CARD2
-1,MATCH,7|6,7|7
-2,MOVE,,
-3,KING,DL,
-```
+## Explicit offline rules
 
-This example illustrates the format and does not assert that these actions form
-a valid route for an arbitrary deal. The console checks syntax, ordering, locations
-and action fields. The later transition/replay milestone will check exposure,
-rank sums, changing DL/DR contents, recycle legality and the final board state.
-This intake milestone does not calculate an independent solution or prove optimality.
+The candidate uses the reference profile from
+[mchung94/pyramid-solver at c6dde73](https://github.com/mchung94/pyramid-solver/tree/c6dde73fd27ec817e2f1329f2a761b384cd8c663).
+Both visible DL and DR cards may be played, including a DL/DR pair. Removing a top
+reveals the next card in that pile. MOVE transfers the current DL top to DR.
+RECYCLE requires empty DL and nonempty DR, preserves original encounter order
+among remaining cards and may occur at most twice. The goal is to clear the
+**28-card tableau**, with one unit per MATCH, KING, MOVE or RECYCLE.
 
-## Validation, storage and errors
+A pair's logical cost is one, although independent guest play uses two ordered
+clicks. Acquisition, restoration, elapsed time and QMP packets are outside this
+objective. A minimum-cost route under this profile is not new proof that every
+rule matches the current Windows guest. A one-tableau clear is separate from
+Pyramid's complete three-board game.
 
-- JSON uses `xsar::pyramid_json::read_from` and its **65,536-byte** document bound.
-  The shared codec rejects unsupported schemas, malformed or contradictory card
-  records, incomplete inventories and duplicate cards. The exported declaration
-  `restoration=verified` is provenance, not a new live restoration observation.
-- CSV has a separate **65,536-byte** input bound and **4,096-record** limit.
-  Empty recordings, malformed headers, invalid fields/actions, duplicate/gapped
-  sequences and out-of-bounds tableau locations are refused with context.
-- `ConsoleData.deal` is the sole card-identity owner: fixed arrays for 28 tableau
-  and 24 stock cards. `ConsoleData.position` adds exactly **52 bytes** of occupancy
-  state, without copying cards. Typed solution steps occupy one ordered allocation.
-  `parameters.rs` owns definitions/enums/constants; `utility.rs` owns checked
-  mappings; `position.rs` owns mutable occupancy/accessibility. The public library
-  exposes `input`, `parameters`, `position` and `utility` for consumer checks.
-- `--help` and `--version` return exit code 0. Invalid command-line arguments return
-  2; input or output failures return 1. A broken output pipe is handled gracefully.
+## Search limits and outcomes
 
-The local xSAR dependency uses sibling `../xsar` with default features disabled
-and `pyramid_json` enabled. Its revision/cleanliness is recorded during verification;
-a path dependency is not a Git pin. Promotion dependency selection remains separate.
+Only `--solve` accepts search-limit options:
 
-## Mutable position foundation
+| Option | Default | Bound |
+| --- | --- | --- |
+| `--max-states <N>` | 2,000,000 | Retained history/state records. |
+| `--max-expansions <N>` | 2,000,000 | Expanded search states. |
+| `--max-memory-mib <N>` | 512 | Conservative collection allowance in MiB. |
+| `--max-seconds <N>` | 120 | Cooperative elapsed-time deadline in seconds. |
 
-The owned `TriangularMatrix<T>` wraps `[T; 28]` and supports checked `get`,
-`get_mut` and array inspection. `PyramidPosition::from_deal` initially marks all
-52 original slots Occupied. Occupancy is a one-byte enum: Unknown, Occupied or
-Empty. Card identities remain immutable in the complete deal.
+The collection estimate charges **1,024 bytes per retained history**. At 512 MiB,
+this allowance permits at most **524,288 histories**, even with a larger state
+limit. It is an estimate for search collections, not a bound on process RSS.
+A* uses the rank-count lower bound and cached ancestor/descendant rank masks for
+sound pruning. Dijkstra provides a zero-heuristic reference for manageable cases.
 
-An occupied bottom-row card is accessible. Above it, both children at
-`(row + 1, column)` and `(row + 1, column + 1)` must be Empty. A parent that is
-Unknown or Empty is not accessible, and an unknown child still blocks access.
-Checked removal rejects invalid, covered, unknown or empty slots without mutation.
-Unknown annotations are conservative and never imply removal.
+Solved, proved no solution, and interrupted outcomes are distinct. CLI exit codes
+are 0 for success/help/version, 1 for input/replay/output errors, 2 for invalid
+arguments, 3 for proved no solution, and 4 for a search limit/cancellation outcome.
+A broken output pipe is handled as success. A resource stop proves neither
+unsolvability nor a minimum route.
 
-Stock occupancy refers to original zero-based slots **0..23**. It does not track
-the changing DL/DR tops or implement D, recycle, pair/King legality or a whole
-solution replay. These transitions remain the later rules/replay milestone.
+The elapsed-time budget and library cancellation are cooperative rather than
+instantaneous. Bounded per-deal cache preparation occurs before the search timer
+starts; reported search time excludes that preparation, file intake and output.
 
-## Verification
+The library accepts an `AtomicBool` cancellation flag, checked cooperatively.
+The CLI uses native operating-system Ctrl+C termination; it does not install a
+signal-to-library-cancellation handler.
 
-Use the repository-selected toolchain. Required implementation checks are locked
-Cargo check, full tests including ignored tests, strict private rustdoc, Clippy,
-formatting and release build. Automated fixture paths are relative to the checkout.
-The actual accepted evidence pair is also exercised through the resulting console
-executable, followed by Charlie's visual comparison against the game.
+## Storage and independent validation
 
-On 18 October 2026, all required checks passed against unchanged, clean xSAR
-`00986b8d621803fc98da85616444fc76c14638a9` (0.4.100): 10 unit tests, 27 CLI
-tests and 9 public position-consumer tests, with no failures or ignored tests.
-The release executable printed every card and all 48 recorded actions from the
-retained evidence pair. See [the verification record](docs/Verification-0.3.2.md)
-for commands, checksums, delivery paths and remaining acceptance boundaries.
+JSON uses `xsar::pyramid_json::read_from` and its **65,536-byte** document bound.
+The shared decoder rejects unsupported schemas, malformed/contradictory card
+records, duplicates and incomplete inventories. Exported restoration metadata
+is provenance, not a new live observation.
+
+`ConsoleData.deal` is the sole card-identity owner. The separate 52-byte occupancy
+model retains Unknown/Occupied/Empty states. The owned `TriangularMatrix<T>` uses
+`[T; 28]` with checked immutable/mutable access. Unknown children block exposure;
+an occupied higher card needs both children Empty. Search uses a compact presence
+mask/cursor/recycle state and bounded predecessor records rather than copying decks.
+
+`parameters.rs` owns shared definitions/enums/constants, `utility.rs` checked
+mappings, `position.rs` conservative occupancy, `rules.rs` pure transitions,
+`search.rs` bounded search and `replay.rs` independent validation. Replay uses
+explicit tableau presence and stock/waste vectors and does not call search
+transitions, successors or heuristics. It checks both MATCH selections before
+mutation and validates rank, exposure, pile order, recycle count and final clear.
+
+The local xSAR dependency remains relative `../xsar`, defaults off, with
+`pyramid_json`. It is unchanged at 0.4.100 for this candidate. A path dependency
+is not a Git revision pin.
+
+## Verification and acceptance
+
+Version 0.8.4 passed package-scoped formatting, locked all-target/all-feature check
+and full tests including ignored tests, strict private rustdoc, warnings-denied
+Clippy, extra production Clippy restrictions and release build. **80 tests passed,
+0 failed, 0 ignored:** 29 unit, 27 CLI, 9 position-consumer, 4 solver-CLI and 11
+solver tests. The accepted 48-action recording passed independent replay; licensed
+15/44-cost fixtures, reference-search comparison and bound/refusal cases passed.
+
+The actual executable calculated an optimal 48-action route under the stated
+profile, equal to the recorded 48, and independently replayed it to final tableau
+0. Search reported 159,012 expanded, 318,985 generated, 185,472 retained and
+26,460 peak frontier in 0.145 seconds. Source/evidence snapshots stayed unchanged
+and the sibling xSAR remained clean. See
+[Verification-0.8.4.md](docs/Verification-0.8.4.md) for commands, executable hash,
+first-failure history and the actual output boundary.
+
+On 19 October, Charlie accepted M05–M09 after successfully playing all 49 printed
+actions on `pyramid-recon-20261019-v7-01`: 24 MATCH, 20 MOVE, 4 KING and 1 RECYCLE,
+ending with tableau zero and both piles empty. The
+[manual acceptance record](docs/Acceptance-0.8.4.md) preserves his supplied trace
+and its original-deal checksum. This is a different deal from the historical
+48-action host regression above.
+
+The next implementation approval point is **M10: guarded independent guest
+execution**. M10/M11 remain Planned. One manually cleared tableau does not
+establish automated execution or a three-board GAME WIN. Versions stay unchanged;
+this acceptance authorises no commit, push or deployment.
+
+The prior accepted 0.3.2 milestone remains documented in
+[its historical verification record](docs/Verification-0.3.2.md).
+Licensed upstream fixtures and notices are listed in
+[third_party/README.md](third_party/README.md).
